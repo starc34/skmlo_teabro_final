@@ -1478,10 +1478,10 @@
       let profile = loadProfile();
       let pendingPhotoData = profile.photo;
       let activeStream = null;
-      let scanTimerId = null;
-      let loaderTimerId = null;
-      let countdownTimerId = null;
-      let toastTimerId = null;
+      let scanId = null;
+      let loaderId = null;
+      let countdownId = null;
+      let toastId = null;
       let audioCtx = null;
 
       // ==================== STORAGE HELPERS ====================
@@ -1552,35 +1552,25 @@
             audioCtx.resume().catch(function () {});
           }
 
-          const now = audioCtx.currentTime;
-          // Clean mid-high scanner beep matching the original video (~1240 Hz)
-          const oscMain = audioCtx.createOscillator();
-          const oscHarm = audioCtx.createOscillator();
-          const gainNode = audioCtx.createGain();
-          const harmGain = audioCtx.createGain();
+        const now = audioCtx.currentTime;
+// Scanner beep measured from the reference video: 1963 Hz triangle, ~140 ms, flat envelope
+const osc = audioCtx.createOscillator();
+const gainNode = audioCtx.createGain();
 
-          oscMain.type = "sine";
-          oscMain.frequency.setValueAtTime(1240, now);
+osc.type = "triangle";
+osc.frequency.setValueAtTime(1963, now);
 
-          oscHarm.type = "sine";
-          oscHarm.frequency.setValueAtTime(2480, now);
-          harmGain.gain.setValueAtTime(0.018, now);
+gainNode.gain.setValueAtTime(0, now);
+gainNode.gain.linearRampToValueAtTime(0.5, now + 0.003);   // fast attack
+gainNode.gain.setValueAtTime(0.5, now + 0.135);            // flat sustain
+gainNode.gain.linearRampToValueAtTime(0, now + 0.141);     // quick cut-off
 
-          gainNode.gain.setValueAtTime(0.0001, now);
-          gainNode.gain.exponentialRampToValueAtTime(0.34, now + 0.008);
-          gainNode.gain.setValueAtTime(0.32, now + 0.14);
-          gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.20);
+osc.connect(gainNode);
+gainNode.connect(audioCtx.destination);
 
-          oscMain.connect(gainNode);
-          oscHarm.connect(harmGain);
-          harmGain.connect(gainNode);
-          gainNode.connect(audioCtx.destination);
-
-          oscMain.start(now);
-          oscHarm.start(now);
-          oscMain.stop(now + 0.21);
-          oscHarm.stop(now + 0.21);
-        } catch (_) {}
+osc.start(now);
+osc.stop(now + 0.15);
+} catch (_) {}
       }
 
       // ==================== RENDERING ====================
@@ -1667,8 +1657,8 @@
       function showToast(msg) {
         el.toast.textContent = msg;
         el.toast.classList.add("show");
-        clearTimeout(toastTimerId);
-        toastTimerId = setTimeout(function () {
+        clearTimeout(toastId);
+        toastId = setTimeout(function () {
           el.toast.classList.remove("show");
         }, 2100);
       }
@@ -1684,20 +1674,20 @@
         el.cameraVideo.srcObject = null;
       }
 
-      function clearPendingTimers() {
-        if (scanTimerId) {
-          clearTimeout(scanTimerId);
-          scanTimerId = null;
+      function clearPendings() {
+        if (scanId) {
+          clearTimeout(scanId);
+          scanId = null;
         }
-        if (loaderTimerId) {
-          clearTimeout(loaderTimerId);
-          loaderTimerId = null;
+        if (loaderId) {
+          clearTimeout(loaderId);
+          loaderId = null;
         }
       }
 
       function openScannerForMeal(mealName) {
         ensureAudioUnlocked();
-        clearPendingTimers();
+        clearPendings();
         stopCamera();
 
         el.scannerSheet.classList.add("open");
@@ -1728,13 +1718,13 @@
         }
 
         // No-fail 4.0-second auto-capture
-        scanTimerId = setTimeout(function () {
+        scanId = setTimeout(function () {
           completeScanSequence(mealName);
         }, 4000);
       }
 
       function closeScanner() {
-        clearPendingTimers();
+        clearPendings();
         el.scannerSheet.classList.remove("open");
         setTimeout(stopCamera, 320);
       }
@@ -1748,10 +1738,10 @@
         setTimeout(stopCamera, 320);
 
         // 3. Show LPU spinning orange loader over Home briefly, then slide up Mess Pass
-        loaderTimerId = setTimeout(function () {
+        loaderId = setTimeout(function () {
           el.lpuLoader.classList.add("visible");
 
-          loaderTimerId = setTimeout(function () {
+          loaderId = setTimeout(function () {
             openMessPass(mealName);
             setTimeout(function () {
               el.lpuLoader.classList.remove("visible");
@@ -1777,10 +1767,10 @@
         el.passModal.classList.add("open");
 
         // Start 30-second countdown
-        clearInterval(countdownTimerId);
+        clearInterval(countdownId);
         let remaining = 30;
         el.countdownBadge.textContent = String(remaining);
-        countdownTimerId = setInterval(function () {
+        countdownId = setInterval(function () {
           remaining -= 1;
           if (remaining <= 0) {
             closeMessPass();
@@ -1791,8 +1781,8 @@
       }
 
       function closeMessPass() {
-        clearInterval(countdownTimerId);
-        countdownTimerId = null;
+        clearInterval(countdownId);
+        countdownId = null;
         el.passModal.classList.remove("open");
       }
 
@@ -1817,32 +1807,32 @@
 
       // Triple-tap on student profile photo
       let photoTapCount = 0;
-      let photoTapTimer = null;
+      let photoTap = null;
       el.homePhotoWrap.addEventListener("click", function () {
         photoTapCount += 1;
-        clearTimeout(photoTapTimer);
+        clearTimeout(photoTap);
         if (photoTapCount >= 3) {
           photoTapCount = 0;
           openEditor();
           return;
         }
-        photoTapTimer = setTimeout(function () {
+        photoTap = setTimeout(function () {
           photoTapCount = 0;
         }, 650);
       });
 
       // Double-tap on "Mess Coupon" header title
       let titleTapCount = 0;
-      let titleTapTimer = null;
+      let titleTap = null;
       el.headerTitle.addEventListener("click", function () {
         titleTapCount += 1;
-        clearTimeout(titleTapTimer);
+        clearTimeout(titleTap);
         if (titleTapCount >= 2) {
           titleTapCount = 0;
           openEditor();
           return;
         }
-        titleTapTimer = setTimeout(function () {
+        titleTap = setTimeout(function () {
           titleTapCount = 0;
         }, 420);
       });
